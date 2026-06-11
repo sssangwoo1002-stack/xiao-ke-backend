@@ -1,0 +1,13 @@
+{
+  "name": "xiao-ke-backend",
+  "version": "1.0.0",
+  "description": "小窝 - AI男友小克的后端服务",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
