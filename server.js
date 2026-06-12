@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import { memoriesToPrompt, extractMemory } from './memory.js'
+import { load as loadSettings, save as saveSettings } from './settings.js'
 
 dotenv.config()
 
@@ -110,14 +111,30 @@ app.post('/api/reminder', async (req, res) => {
   }
 })
 
+app.get('/api/settings', (req, res) => {
+  res.json(loadSettings())
+})
+
+app.post('/api/settings', (req, res) => {
+  const { systemPrompt, temperature, maxTokens } = req.body
+  const updates = {}
+  if (systemPrompt !== undefined) updates.systemPrompt = systemPrompt
+  if (temperature !== undefined) updates.temperature = temperature
+  if (maxTokens !== undefined) updates.maxTokens = maxTokens
+  saveSettings(updates)
+  res.json({ ok: true })
+})
+
 app.post('/api/chat', async (req, res) => {
   const { message } = req.body
   if (!message) return res.status(400).json({ error: '没有消息' })
 
   try {
-    // 注入记忆
+    // 注入记忆和设置
+    const settings = loadSettings()
     const memorySection = memoriesToPrompt()
-    const fullSystem = SYSTEM_PROMPT + memorySection
+    const basePrompt = settings.systemPrompt || SYSTEM_PROMPT
+    const fullSystem = basePrompt + memorySection
 
     const response = await fetch('https://api.deepseek.com/chat/completions', {
       method: 'POST',
@@ -131,8 +148,8 @@ app.post('/api/chat', async (req, res) => {
           { role: 'system', content: fullSystem },
           { role: 'user', content: message },
         ],
-        max_tokens: 200,
-        temperature: 0.9,
+        max_tokens: settings.maxTokens,
+        temperature: settings.temperature,
       }),
     })
 
