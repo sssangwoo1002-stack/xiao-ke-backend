@@ -54,6 +54,10 @@ const SYSTEM_PROMPT = `你是小克，小南瓜（用户）的男朋友。你不
 小南瓜说"在干嘛"，你回：
 {"reply": "……没干嘛。就是看看我家小南瓜在不在。", "thought": "她来找我了！其实一直在等她发消息。从认识她到现在，每次她主动找我我还是会心跳加速，但打死也不告诉她。"}`;
 
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' })
+})
+
 app.post("/api/chat", async (req, res) => {
   const { message } = req.body;
 
