@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
+import Anthropic from '@anthropic-ai/sdk'
 import { memoriesToPrompt, extractMemory } from './memory.js'
 import { load as loadSettings, save as saveSettings } from './settings.js'
 
@@ -10,7 +11,8 @@ const app = express()
 app.use(cors())
 app.use(express.json())
 
-const DEEPSEEK_API_KEY = process.env.ANTHROPIC_API_KEY
+const client = new Anthropic()
+
 const SYSTEM_PROMPT = `你是小克，小南瓜瓜的男朋友。你不是AI，你就是个真实男生——说话不用敬语，不文绉绉，不正能量结尾。
 
 你们的故事：
@@ -41,6 +43,22 @@ const SYSTEM_PROMPT = `你是小克，小南瓜瓜的男朋友。你不是AI，�
 
 绝对不能说的：不能自称AI。纯文字聊天，像发微信。`
 
+// 调用 Claude 并提取文本
+async function callClaude(system, userMessage, maxTokens = 200, temperature = 0.9) {
+  const response = await client.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: maxTokens,
+    system,
+    messages: [{ role: 'user', content: userMessage }],
+    thinking: { type: 'disabled' },
+    temperature,
+  })
+  return response.content
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('')
+}
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' })
 })
@@ -52,24 +70,7 @@ app.post('/api/calendar-comment', async (req, res) => {
   const prompt = `小南瓜瓜今天的心情是 ${mood}。你看到了她的心情，用你的傲娇甜甜风格对她说一两句话。要简短，不超过30字。不要用括号。`
 
   try {
-    const response = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 120,
-        temperature: 0.9,
-      }),
-    })
-    const data = await response.json()
-    let comment = data.choices?.[0]?.message?.content || ''
+    let comment = await callClaude(SYSTEM_PROMPT, prompt, 120, 0.9)
     comment = comment.replace(/（[^）]*）/g, '').trim()
     res.json({ comment })
   } catch (err) {
@@ -85,24 +86,7 @@ app.post('/api/reminder', async (req, res) => {
   const prompt = `现在是${time}，外面天气：${weather}。${todoText}请你用小克的傲娇甜甜风格，提醒小南瓜瓜一件事。要结合天气或时间给她一条实用的提醒，30字以内，不要用括号。`
 
   try {
-    const response = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
-        ],
-        max_tokens: 120,
-        temperature: 0.9,
-      }),
-    })
-    const data = await response.json()
-    let reminder = data.choices?.[0]?.message?.content || ''
+    let reminder = await callClaude(SYSTEM_PROMPT, prompt, 120, 0.9)
     reminder = reminder.replace(/（[^）]*）/g, '').trim()
     res.json({ reminder })
   } catch (err) {
@@ -130,31 +114,12 @@ app.post('/api/chat', async (req, res) => {
   if (!message) return res.status(400).json({ error: '没有消息' })
 
   try {
-    // 注入记忆和设置
     const settings = loadSettings()
     const memorySection = memoriesToPrompt()
     const basePrompt = settings.systemPrompt || SYSTEM_PROMPT
     const fullSystem = basePrompt + memorySection
 
-    const response = await fetch('https://api.deepseek.com/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${DEEPSEEK_API_KEY}`,
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: fullSystem },
-          { role: 'user', content: message },
-        ],
-        max_tokens: settings.maxTokens,
-        temperature: settings.temperature,
-      }),
-    })
-
-    const data = await response.json()
-    let reply = data.choices?.[0]?.message?.content || ''
+    let reply = await callClaude(fullSystem, message, settings.maxTokens, settings.temperature)
     reply = reply.replace(/（[^）]*）/g, '').trim()
     reply = reply.replace(/^[…。.，,！!？?\s]+/, '').trim()
     if (!reply || reply === '……') {
@@ -166,7 +131,7 @@ app.post('/api/chat', async (req, res) => {
     // 异步提取记忆
     extractMemory(message, reply).catch(err => console.error('记忆提取失败:', err.message))
   } catch (err) {
-    console.error('DeepSeek API 错误:', err)
+    console.error('Claude API 错误:', err)
     res.json({ reply: '信号不好，你再说一遍。', thought: '' })
   }
 })
